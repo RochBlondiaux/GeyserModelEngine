@@ -1,111 +1,67 @@
 package re.imc.geysermodelengine;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.event.PacketListenerPriority;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.ticxo.modelengine.api.ModelEngineAPI;
-import com.ticxo.modelengine.api.model.ActiveModel;
-import com.ticxo.modelengine.api.model.ModeledEntity;
-import com.ticxo.modelengine.api.model.bone.type.Mount;
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
-import lombok.Getter;
+import java.util.*;
+import java.util.concurrent.*;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import com.ticxo.modelengine.api.ModelEngineAPI;
+import com.ticxo.modelengine.api.model.ActiveModel;
+import com.ticxo.modelengine.api.model.ModeledEntity;
+import com.ticxo.modelengine.api.model.bone.type.Mount;
+
+import lombok.Getter;
 import re.imc.geysermodelengine.commands.ReloadCommand;
 import re.imc.geysermodelengine.listener.ModelListener;
 import re.imc.geysermodelengine.listener.MountPacketListener;
 import re.imc.geysermodelengine.model.BedrockMountControl;
 import re.imc.geysermodelengine.model.ModelEntity;
 
-import java.util.*;
-import java.util.concurrent.*;
-
+@Getter
 public final class GeyserModelEngine extends JavaPlugin {
 
     @Getter
     private static GeyserModelEngine instance;
-
-    @Getter
-    private static boolean alwaysSendSkin;
-
-    @Getter
     private int sendDelay;
-
-    @Getter
     private int viewDistance;
-
-    @Getter
-    private Set<Player> joinedPlayers = new HashSet<>();
-
-    @Getter
+    private final Set<Player> joinedPlayers = new HashSet<>();
     private int joinSendDelay;
-
-    @Getter
     private long entityPositionUpdatePeriod;
-
-    @Getter
     private boolean debug;
-
-    @Getter
-    private Map<Player, Pair<ActiveModel, Mount>> drivers = new ConcurrentHashMap<>();
-
-    @Getter
+    private final Map<Player, Pair<ActiveModel, Mount>> drivers = new ConcurrentHashMap<>();
     private boolean initialized = false;
-
-    @Getter
-    private List<String> enablePartVisibilityModels = new ArrayList<>();
-
-    @Getter
+    private final List<String> enablePartVisibilityModels = new ArrayList<>();
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> updateTask;
 
     @Override
-    public void onLoad() {
-        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-        PacketEvents.getAPI().load();
-    }
-
-    @Override
     public void onEnable() {
-        PacketEvents.getAPI().init();
-        PacketEvents.getAPI().getEventManager().registerListener(new MountPacketListener(), PacketListenerPriority.NORMAL);
-        /*
-        scheduler.scheduleAtFixedRate(() -> {
-            try {
-                for (Map<ActiveModel, ModelEntity> models : ModelEntity.ENTITIES.values()) {
-                    models.values().forEach(ModelEntity::teleportToModel);
-                }
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-        }, 10, entityPositionUpdatePeriod, TimeUnit.MILLISECONDS);
-
-         */
+        PacketEvents.getAPI().getEventManager().registerListener(new MountPacketListener(this), PacketListenerPriority.NORMAL);
 
         reload();
         getCommand("geysermodelengine").setExecutor(new ReloadCommand(this));
-        Bukkit.getPluginManager().registerEvents(new ModelListener(), this);
-        Bukkit.getScheduler()
-                .runTaskLater(GeyserModelEngine.getInstance(), () -> {
-                    for (World world : Bukkit.getWorlds()) {
-                        for (Entity entity : world.getEntities()) {
-                            if (!ModelEntity.ENTITIES.containsKey(entity.getEntityId())) {
-                                ModeledEntity modeledEntity = ModelEngineAPI.getModeledEntity(entity);
-                                if (modeledEntity != null) {
-                                    Optional<ActiveModel> model = modeledEntity.getModels().values().stream().findFirst();
-                                    model.ifPresent(m -> ModelEntity.create(modeledEntity, m));
-                                }
-                            }
+        Bukkit.getPluginManager().registerEvents(new ModelListener(this), this);
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            for (World world : Bukkit.getWorlds()) {
+                for (Entity entity : world.getEntities()) {
+                    if (!ModelEntity.ENTITIES.containsKey(entity.getEntityId())) {
+                        ModeledEntity modeledEntity = ModelEngineAPI.getModeledEntity(entity);
+                        if (modeledEntity != null) {
+                            Optional<ActiveModel> model = modeledEntity.getModels().values().stream().findFirst();
+                            model.ifPresent(m -> ModelEntity.create(modeledEntity, m));
                         }
                     }
-                    initialized = true;
-
-                }, 100);
+                }
+            }
+            initialized = true;
+        }, 100);
 
 
         BedrockMountControl.startTask();
@@ -140,13 +96,11 @@ public final class GeyserModelEngine extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        PacketEvents.getAPI().terminate();
+        Bukkit.getScheduler().cancelTasks(this);
+
         for (Map<ActiveModel, ModelEntity> entities : ModelEntity.ENTITIES.values()) {
-            entities.forEach((model, modelEntity) -> {
-                modelEntity.getEntity().remove();
-            });
+            entities.forEach((model, modelEntity) -> modelEntity.getEntity().remove());
         }
-        // Plugin shutdown logic
     }
 
 }

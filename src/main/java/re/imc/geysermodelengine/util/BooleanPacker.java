@@ -6,33 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 public class BooleanPacker {
+
     public static final int MAX_BOOLEANS = 24;
-
-    public static int booleansToInt(List<Boolean> booleans) {
-        int result = 0;
-        int i = 1;
-        for (boolean b : booleans) {
-            if (b) {
-                result += i;
-            }
-            i *= 2;
-        }
-        return result;
-    }
-
-    public static int mapBooleansToInt(Map<String, Boolean> booleanMap) {
-        int result = 0;
-        int i = 1;
-        List<String> keys = new ArrayList<>(booleanMap.keySet());
-        Collections.sort(keys);
-        for (String key : keys) {
-            if (booleanMap.get(key)) {
-                result += i;
-            }
-            i *= 2;
-        }
-        return result;
-    }
 
     public static List<Integer> booleansToInts(List<Boolean> booleans) {
         List<Integer> results = new ArrayList<>();

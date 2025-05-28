@@ -1,5 +1,19 @@
 package re.imc.geysermodelengine.model;
 
+import java.awt.*;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+import org.geysermc.floodgate.api.FloodgateApi;
+import org.joml.Vector3fc;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.ticxo.modelengine.api.animation.BlueprintAnimation;
@@ -9,33 +23,22 @@ import com.ticxo.modelengine.api.model.ActiveModel;
 import com.ticxo.modelengine.api.model.ModeledEntity;
 import com.ticxo.modelengine.api.model.bone.ModelBone;
 import com.ticxo.modelengine.api.model.render.DisplayRenderer;
+
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import me.zimzaza4.geyserutils.spigot.api.EntityUtils;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
-import org.geysermc.floodgate.api.FloodgateApi;
-import org.joml.Vector3f;
-import org.joml.Vector3fc;
 import re.imc.geysermodelengine.GeyserModelEngine;
+import static re.imc.geysermodelengine.model.ModelEntity.ENTITIES;
+import static re.imc.geysermodelengine.model.ModelEntity.MODEL_ENTITIES;
 import re.imc.geysermodelengine.packet.entity.PacketEntity;
 import re.imc.geysermodelengine.util.BooleanPacker;
 
-import java.awt.*;
-import java.lang.reflect.Method;
-import java.util.*;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
-import static re.imc.geysermodelengine.model.ModelEntity.ENTITIES;
-import static re.imc.geysermodelengine.model.ModelEntity.MODEL_ENTITIES;
-
 @Getter
 @Setter
+@RequiredArgsConstructor
 public class EntityTask {
+
     public static final Method GET_SCALE;
 
     static {
@@ -46,33 +49,29 @@ public class EntityTask {
         }
     }
 
-    ModelEntity model;
+    private final GeyserModelEngine plugin;
+    private final ModelEntity model;
 
-    int tick = 0;
-    int syncTick = 0;
+    private int tick = 0;
+    private int syncTick = 0;
 
-    boolean removed = false;
+    private boolean removed = false;
 
-    float lastScale = -1.0f;
-    Color lastColor = null;
-    Map<String, Integer> lastIntSet = new ConcurrentHashMap<>();
-    Cache<String, Boolean> lastPlayedAnim = CacheBuilder.newBuilder()
+    private float lastScale = -1.0f;
+    private Color lastColor = null;
+
+    private final Map<String, Integer> lastIntSet = new ConcurrentHashMap<>();
+    private final Cache<String, Boolean> lastPlayedAnim = CacheBuilder.newBuilder()
             .expireAfterWrite(30, TimeUnit.MILLISECONDS).build();
 
-    private ScheduledFuture scheduledFuture;
+    private ScheduledFuture<?> scheduledFuture;
 
-    public EntityTask(ModelEntity model) {
-        this.model = model;
-    }
     public void runAsync() {
         PacketEntity entity = model.getEntity();
         if (entity.isDead()) {
             return;
         }
 
-        PacketEntity packetEntity = model.getEntity();
-        // packetEntity.setHeadYaw((float) Math.toDegrees(model.getModeledEntity().getYHeadRot()));
-        // packetEntity.setHeadPitch((float) Math.toDegrees(model.getModeledEntity().getXHeadRot()));
         model.teleportToModel();
 
         Set<Player> viewers = model.getViewers();
@@ -99,42 +98,34 @@ public class EntityTask {
             }
         }
 
-        tick ++;
+        tick++;
         if (tick > 400) {
             tick = 0;
             sendHitBoxToAll();
         }
 
-        // Optional<Player> player = viewers.stream().findAny();
-        // if (player.isEmpty()) return
-
-        if (viewers.isEmpty()) {
+        if (viewers.isEmpty())
             return;
-        }
-        // updateEntityProperties(viewers, false);
 
         // do not actually use this, atleast bundle these up ;(
         sendScale(viewers, false);
         sendColor(viewers, false);
-
-
     }
 
     public void checkViewers(Set<Player> viewers) {
         for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
-            if (FloodgateApi.getInstance().isFloodgatePlayer(onlinePlayer.getUniqueId())) {
+            if (!FloodgateApi.getInstance().isFloodgatePlayer(onlinePlayer.getUniqueId()))
+                continue;
 
-                if (canSee(onlinePlayer, model.getEntity())) {
-
-                    if (!viewers.contains(onlinePlayer)) {
-                        sendSpawnPacket(onlinePlayer);
-                        viewers.add(onlinePlayer);
-                    }
-                } else {
-                    if (viewers.contains(onlinePlayer)) {
-                        model.getEntity().sendEntityDestroyPacket(Collections.singletonList(onlinePlayer));
-                        viewers.remove(onlinePlayer);
-                    }
+            if (canSee(onlinePlayer, model.getEntity())) {
+                if (!viewers.contains(onlinePlayer)) {
+                    sendSpawnPacket(onlinePlayer);
+                    viewers.add(onlinePlayer);
+                }
+            } else {
+                if (viewers.contains(onlinePlayer)) {
+                    model.getEntity().sendEntityDestroyPacket(Collections.singletonList(onlinePlayer));
+                    viewers.remove(onlinePlayer);
                 }
             }
         }
@@ -265,6 +256,7 @@ public class EntityTask {
             intUpdates.put("modelengine:anim" + i, integer);
             i++;
         }
+
         if (!firstSend) {
             if (intUpdates.equals(lastIntSet)) {
                 return;
@@ -275,7 +267,6 @@ public class EntityTask {
             }
         }
 
-        // System.out.println("AN: " + animUpdates.size() + ", BO:" + boneUpdates.size());
         if (GeyserModelEngine.getInstance().isDebug()) {
             GeyserModelEngine.getInstance().getLogger().info(animUpdates.toString());
         }
@@ -292,11 +283,11 @@ public class EntityTask {
     private void processBone(BlueprintBone bone, Map<String, Boolean> map) {
         String name = unstripName(bone).toLowerCase();
         if (name.equals("hitbox") ||
-                name.equals("shadow") ||
-                name.equals("mount") ||
-                name.startsWith("p_") ||
-                name.startsWith("b_") ||
-                name.startsWith("ob_")) {
+            name.equals("shadow") ||
+            name.equals("mount") ||
+            name.startsWith("p_") ||
+            name.startsWith("b_") ||
+            name.startsWith("ob_")) {
             return;
         }
         for (BlueprintBone blueprintBone : bone.getChildren().values()) {
@@ -310,6 +301,7 @@ public class EntityTask {
         }
         map.put(name, visible);
     }
+
     private String unstripName(BlueprintBone bone) {
         String name = bone.getName();
         if (bone.getBehaviors().get("head") != null) {
@@ -332,7 +324,7 @@ public class EntityTask {
 
         if (model.getActiveModel().isShadowVisible()) {
             if (model.getActiveModel().getModelRenderer() instanceof DisplayRenderer displayRenderer) {
-            //    w = displayRenderer.getHitbox().getShadowRadius().get();
+                //    w = displayRenderer.getHitbox().getShadowRadius().get();
             }
         }
         EntityUtils.sendCustomHitBox(viewer, model.getEntity().getEntityId(), 0.02f, w);
